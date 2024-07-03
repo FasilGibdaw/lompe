@@ -269,4 +269,4 @@ def date2doy(date_str):
 
 
 if __name__ == '__main__':
-    print("This is a module to download SSUSI data for a given event date.")
+    print("This is a module to download data from different sources for a given event date.")
