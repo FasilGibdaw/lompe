@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import datetime as dt
 import os
+import certifi
 from lompe.data_tools.supermag_api import SuperMAGGetData, sm_GetUrl, sm_coreurl
 
 
@@ -87,7 +88,8 @@ def download_smag(event, tempfile_path='./', hemi='all'):
     """
 
     start = event + 'T00:00:00'
-    duration = 86400  # Duration in seconds
+    duration = 86400  # Duration in seconds (one day)
+    # lompe username is already registered in the API
     urlstr = sm_coreurl('inventory.php', 'lompe', start, duration)
     success, stations = sm_GetUrl(urlstr, 'raw')
     stations = stations[1:-1]
@@ -172,8 +174,85 @@ def download_smag(event, tempfile_path='./', hemi='all'):
             'Something went wrong, check inputs, API availability etc.')
 
 
-def download_iridium():
-    pass
+def ampere_parsestart(start):
+    # internal helper function from supermag_api.py
+
+    # takes either list of [yyyy, mo, dd, hh, mm, opt_ss]
+    # or string of a normal datetime 'YYYY-MM-DD hh-mm' (optional ss)
+    # or the SuperMAG-ready 'YYYY-MM-DDThh-mm-ss'
+
+    if isinstance(start, list):
+        timestring = "%4.4d-%2.2d-%2.2dT%2.2d:%2.2d" % tuple(start[0:5])
+    elif isinstance(start, dt.date):
+        # good to go, TBD
+        timestring = start.strftime("%Y-%m-%dT%H:%M")
+    else:
+        # is a string, reparse, TBD
+        timestring = start
+
+    return (timestring)
+
+
+def ampere_coreurl(page, logon, start, extent):
+    # internal helper function from supermag_api.py
+    baseurl = "https://ampere.jhuapl.edu/"
+
+    mytime = ampere_parsestart(start)
+    urlstr = baseurl + 'services/'+page+'?'
+    urlstr += '&logon='+logon
+    urlstr += '&start='+mytime
+
+    urlstr += '&extent=' + ("%12.12d" % extent)
+
+    return (urlstr)
+
+
+def download_iridium(event, basepath='./', tempfile_path='./', file_name=''):
+    """Download netcdf (dB raw) data to be used by lompe from the AMPERE database (jhuapl) for a given event
+    returns an input for the lompe read_iridium script in dataloader.py in data_tools
+    Example usage:
+        event = '2012-04-05'
+        basepath = 'downloads'
+        tempfile_path = 'downloads'
+        file_name = '20120405_iridium.h5'
+        download_iridium(event, basepath, tempfile_path, file_name)
+
+    Args:
+        event (str): fromat YYYY-MM-DD
+        basepath (str, optional): path to . Defaults to './'.
+        tempfile_path (str, optional): path to. Defaults to './'.
+        file_name (str, optional):name of the file to write the netcdf file. Defaults to ''.
+
+    Returns:
+        saved file: to be used by the lompe read_iridium function in data_tools
+
+    Note: 
+        functions "ampere_parsestart" and "ampere_coreurl" are internal helper functions adapted from supermag_api.py
+        credit to the original author of the functions.
+    """
+
+    start = event + 'T00:00:00'
+    duration = 86400  # Duration in seconds (one day)
+    # check if the processed file exists
+    savefile = tempfile_path + event.replace('-', '') + '_iridium.h5'
+
+    if os.path.isfile(savefile):  # checks if file already exists
+        return savefile
+    else:
+
+        # URL to download data from (lompe username is already registered in the API)
+        urlstr = ampere_coreurl('data-rawdB.php', 'lompe', start, duration)
+
+        response = requests.get(urlstr, verify=certifi.where())
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            # Save the downloaded data to a file
+            with open(savefile + '.nc', 'wb') as file:
+                file.write(response.content)
+        else:
+            print(f"Failed to retrieve data: {response.status_code}")
+        return savefile
 
 
 def download_dmsp():
