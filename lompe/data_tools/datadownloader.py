@@ -96,8 +96,8 @@ def download_smag(event, tempfile_path='./', hemi='all'):
         return savefile
 
     elif success and stations:
-
-        file = '/Users/fasilkebede/Documents/LOMPE/Data/SuperMAG/20240625-18-56-supermag-stations.csv'
+        basepath = os.path.dirname(__file__)
+        file = basepath + '/../data/supermag_stations.csv'
         data_temp = pd.read_csv(file, sep=',', nrows=0)
         df = pd.read_csv(file, sep=',', skiprows=1, header=None,
                          names=data_temp.columns, usecols=range(len(data_temp.columns)))
