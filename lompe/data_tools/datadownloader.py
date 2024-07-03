@@ -176,10 +176,6 @@ def download_iridium():
     pass
 
 
-def download_supermag():
-    pass
-
-
 def download_dmsp():
     pass
 
