@@ -1,5 +1,5 @@
 from multiprocessing import Pool
-from supermag_api import sm_GetUrl, sm_coreurl, sm_keycheck_data
+from lompe.data_tools.supermag_api import sm_GetUrl, sm_coreurl, sm_keycheck_data
 import requests
 import certifi
 import os
