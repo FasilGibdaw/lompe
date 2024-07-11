@@ -1,12 +1,16 @@
 import numpy as np
 import pandas as pd
 import requests
+from requests_ftp import ftp
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import datetime as dt
 import os
 import certifi
 from lompe.data_tools.supermag_api import SuperMAGGetData, sm_GetUrl, sm_coreurl
+from lompe.data_tools.supermag_direct import download_data_for_event as ddfe
+import glob
+import shutil
 
 
 def download_sussi(event, destination='downloads', source='jhuapl'):
@@ -64,7 +68,7 @@ def download_sussi(event, destination='downloads', source='jhuapl'):
                     print(f"Failed to download {file_url}: {e}")
 
     print("Download complete!")
-    return None
+    return filename
 
 
 def download_smag(event, tempfile_path='./', hemi='all'):
@@ -85,6 +89,8 @@ def download_smag(event, tempfile_path='./', hemi='all'):
 
     Returns:
         saved file path if successful: str
+
+    Note: not sure this is the one which is daily basedlined: need to be checked
     """
 
     start = event + 'T00:00:00'
@@ -234,7 +240,7 @@ def download_iridium(event, basepath='./', tempfile_path='./', file_name=''):
     start = event + 'T00:00:00'
     duration = 86400  # Duration in seconds (one day)
     # check if the processed file exists
-    savefile = tempfile_path + event.replace('-', '') + '_iridium.h5'
+    savefile = tempfile_path + event.replace('-', '') + '_iridium.nc'
 
     if os.path.isfile(savefile):  # checks if file already exists
         return savefile
@@ -248,10 +254,106 @@ def download_iridium(event, basepath='./', tempfile_path='./', file_name=''):
         # Check if the request was successful
         if response.status_code == 200:
             # Save the downloaded data to a file
-            with open(savefile + '.nc', 'wb') as file:
+            with open(savefile, 'wb') as file:
                 file.write(response.content)
         else:
             print(f"Failed to retrieve data: {response.status_code}")
+        return savefile
+
+
+def download_supermag(event, tempfile_path='./'):
+    """This downlaods data from superMAG for a given event and returns the hdf file suitable to lompe
+       This is a faster way i can think of to download data from superMAG, the download_smag.py is slow
+       since it uses serial processing to download data for each station. This uses multiprocessing to download (see the supermag_direct.py for the multiprocessing implemetation)
+
+    Args:
+        event (str): format 'YYYY-MM-DD'
+
+    Returns:
+        hdf file: this returns the hdf file with the data for the event, no need of using read_smag in the lompe dataloader.py script 
+
+    Note: not sure the data we get here is the one which is daily basedlined: need to be checked
+    """
+    # event = '2012-04-05'
+    start = event + 'T00:00:00'
+    savefile = tempfile_path + event.replace('-', '') + '_supermag.h5'
+
+    if os.path.isfile(savefile):  # checks if file already exists
+        return savefile
+    else:
+        # run the function to download the data in the tempfiles folder (later to be deleted if successful)
+        ddfe(start)
+
+        files = glob.glob('./tempfiles/*.txt')
+        df_combined = pd.DataFrame()
+        for file in files:
+            data = pd.read_json(file)
+            df_combined = pd.concat([df_combined, data], axis=0)
+        # date conversion and cleaning the DataFrame
+        df_combined['tval'] = pd.to_datetime(
+            df_combined['tval'], unit='s', origin='unix')
+        df_combined[['N', 'E', 'Z']] = df_combined[['N', 'E', 'Z']].map(
+            lambda x: x['geo'] if isinstance(x, dict) else np.nan)
+        df_combined[['N', 'E', 'Z']] = df_combined[[
+            'N', 'E', 'Z']].replace(999999.000000, np.nan)
+
+        # Final DataFrame to save as hdf
+        df_combined.set_index('tval', inplace=True)
+        df_combined.rename(columns={
+            'glat': 'lat', 'glon': 'lon', 'N': 'Bn', 'E': 'Be', 'Z': 'Bu'}, inplace=True)
+        df_combined['Bu'] = -df_combined['Bu']
+        df_final = df_combined[['Be', 'Bn', 'Bu',
+                                'lat', 'lon']].dropna().sort_index()
+
+        # savefile = event.replace('-', '') + '_supermag.h5'
+
+        df_final.to_hdf(savefile, key='df_final', mode='w')
+        # remove the tempfiles folder after the hdf file is created
+        shutil.rmtree('./tempfiles/')
+        return savefile
+
+
+def download_champ(event, basepath='./', tempfile_path='./'):
+    """Download CHAMP data from the FTP server (source: https://www.gfz-potsdam.de). 
+       Note that the data is only available for the year between 2000 and 2010.
+
+    Args:
+        event (str): format 'YYYY-MM-DD'
+        basepath (str, optional): path. Defaults to './'.
+        tempfile_path (str, optional): path. Defaults to './'.
+
+    Returns:
+        savedfile: file name of the downloaded file if successful
+    """
+    event_date = event.replace('-', '')
+    year = event[:4]
+    savefile = tempfile_path + event.replace('-', '') + '_champ.cdf'
+    savefile = tempfile_path + f'CH_ME_MAG_LR_3_{event_date}_0102.cdf'
+    if os.path.isfile(savefile):  # checks if file already exists
+        return savefile
+    else:
+        # Register the FTP adapter
+        session = requests.Session()
+        session.mount('ftp://', ftp.FTPAdapter())
+        # URL of the file
+        try:
+            ftp_url = f"ftp://isdcftp.gfz-potsdam.de/champ/ME/Level3/MAG/V0102/{year}/CH_ME_MAG_LR_3_{event_date}_0102.cdf"
+
+            # Download the file
+            response = session.get(ftp_url)
+
+            # Check if the download was successful
+            if response.status_code == 200:
+                # Write the content to a file
+                # savefile = ftp_url.split('/')[-1]
+                with open(savefile, "wb") as file:  # downloading the file
+                    file.write(response.content)
+                print("Download successful!")
+            else:
+                print(
+                    f"Failed to download the file. Status code: {response.status_code}")
+        except Exception as e:
+            print(e)
         return savefile
 
 

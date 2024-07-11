@@ -565,7 +565,7 @@ def plot_SECS_amplitudes(ax, model, curl_free = True, **kwargs):
 
 def lompeplot(model, figheight = 9, include_data = False, show_data_location= False, apex = None, time = None, 
                      savekw = None, clkw = {}, quiverscales = None, colorscales = None, 
-                     debug = False, return_axes = False):
+                     debug = False, return_axes = False, show_plot = True):
     """ produce a summary plot of lompe parameters. 
 
         The output is either a figure displayed on screen or, if savekw is given, a figure saved to disk
@@ -737,7 +737,7 @@ def lompeplot(model, figheight = 9, include_data = False, show_data_location= Fa
 
     if savekw != None:
         plt.savefig(**savekw)
-    else:
+    elif show_plot:
         plt.show()
     if return_axes==True:
         return fig, axes, arrowax, [cbarax1, cbarax2]
