@@ -371,9 +371,9 @@ def download_file(url, save_path):
 
 
 def download_sdarn_files(event, basepath='./'):
-    basepath = os.path.dirname(__file__)
+    filepath = os.path.dirname(__file__)
     # file containing the URLs of the SuperDARN files (zenodo records)
-    file_loc = pd.read_csv(basepath + '/../data/sdarn_2010_to_2021.csv')
+    file_loc = pd.read_csv(filepath + '/../data/sdarn_2010_to_2021.csv')
     # Month mapping
     month_map = {
         'Jan': '01',
@@ -438,7 +438,7 @@ def download_sdarn(event, basepath='./', tempfile_path='./'):
     if os.path.isfile(savefile):
         return savefile
     else:
-        os.makedirs('sdarn_files', exist_ok=True)
+        os.makedirs(basepath + 'sdarn_files', exist_ok=True)
         download_sdarn_files(event, basepath + '/sdarn_files/')
         # looking for the .nc files for the event
         files = glob.glob(
