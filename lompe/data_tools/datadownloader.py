@@ -8,6 +8,8 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import datetime as dt
 import os
+import cdflib
+import ppigrf
 import certifi
 from lompe.data_tools.supermag_api import SuperMAGGetData, sm_GetUrl, sm_coreurl
 from lompe.data_tools.supermag_direct import download_data_for_event as ddfe
@@ -316,8 +318,9 @@ def download_supermag(event, tempfile_path='./'):
 
 
 def download_champ(event, basepath='./', tempfile_path='./'):
-    """Download CHAMP data from the FTP server (source: https://www.gfz-potsdam.de). 
-       Note that the data is only available for the year between 2000 and 2010.
+    """
+    Download CHAMP data from the FTP server and process it in lompe data format.
+    Note that CHAMP data is only available for the year between 2000 and 2010.
 
     Args:
         event (str): format 'YYYY-MM-DD'
@@ -325,38 +328,66 @@ def download_champ(event, basepath='./', tempfile_path='./'):
         tempfile_path (str, optional): path. Defaults to './'.
 
     Returns:
-        savedfile: file name of the downloaded file if successful
+        savedfile: file name of the processed file if successful
     """
     event_date = event.replace('-', '')
     year = event[:4]
-    savefile = tempfile_path + event.replace('-', '') + '_champ.cdf'
     savefile = tempfile_path + f'CH_ME_MAG_LR_3_{event_date}_0102.cdf'
-    if os.path.isfile(savefile):  # checks if file already exists
-        return savefile
-    else:
-        # Register the FTP adapter
+    processed_file = tempfile_path + f'{event_date}_champ.h5'
+    
+    # Check if the processed file already exists
+    if os.path.isfile(processed_file):
+        return processed_file
+    
+    # Check if the raw file already exists
+    if not os.path.isfile(savefile):
         session = requests.Session()
         session.mount('ftp://', ftp.FTPAdapter())
-        # URL of the file
+        ftp_url = f"ftp://isdcftp.gfz-potsdam.de/champ/ME/Level3/MAG/V0102/{year}/CH_ME_MAG_LR_3_{event_date}_0102.cdf"
         try:
-            ftp_url = f"ftp://isdcftp.gfz-potsdam.de/champ/ME/Level3/MAG/V0102/{year}/CH_ME_MAG_LR_3_{event_date}_0102.cdf"
-
-            # Download the file
+            # Downloading the file and checking if it was successful
             response = session.get(ftp_url)
-
-            # Check if the download was successful
             if response.status_code == 200:
-                # Write the content to a file
-                # savefile = ftp_url.split('/')[-1]
-                with open(savefile, "wb") as file:  # downloading the file
+                with open(savefile, "wb") as file:
                     file.write(response.content)
-                print("Download successful!")
+                print(f"Downloading {savefile} is successful!")
             else:
-                print(
-                    f"Failed to download the file. Status code: {response.status_code}")
+                print(f"Failed to download the file. Status code: {response.status_code}")
+                return None
         except Exception as e:
             print(e)
-        return savefile
+            return None
+    
+    # Process the downloaded CDF file ot get the magnetic disturbance
+    try:
+        cdf_file = cdflib.CDF(savefile)
+        mag = cdf_file.varget('B_NEC')  # space magnetometer data
+        
+        # geocentric coords of CHAMP orbit
+        theta = 90 - cdf_file.varget('Latitude')
+        phi = cdf_file.varget('Longitude')
+        r = cdf_file.varget('Radius') / 1000
+        
+        time = cdflib.cdfepoch.to_datetime(cdf_file.varget('Timestamp'))
+        
+        # using IGRF to calculate magnetic disturbance (dB) registered by CHAMP
+        Br, Btheta, Bphi = ppigrf.igrf_gc(r, theta, phi, time[0])
+        B0 = np.vstack((-Btheta.flatten(), Bphi.flatten(), -Br.flatten()))
+        dB = mag.T - B0
+        
+        champ_df = pd.DataFrame({
+            'Be': dB[1],
+            'Bn': dB[0],
+            'Br': -dB[2],
+            'lon': phi,
+            'lat': 90 - theta,
+            'r': r
+        }, index=time)
+        champ_df.to_hdf(processed_file, key='df', mode='w')
+        return processed_file
+    except Exception as e:
+        print(f"Failed to process the file: {e}")
+        return None
 
 
 def download_file(url, save_path):
@@ -550,7 +581,7 @@ def download_swarm(event, tempfile_path='./'):
         # Removing the background field from IGRF
         df['B_n'] = df['B_NEC_N'] - df['B_NEC_IGRF_N']
         df['B_e'] = df['B_NEC_E'] - df['B_NEC_IGRF_E']
-        df['B_u'] = df['B_NEC_C'] - df['B_NEC_IGRF_C']
+        df['B_u'] = -(df['B_NEC_C'] - df['B_NEC_IGRF_C']) # Upward is negative in the NEC systema
         
         df.sort_values(by='Timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
