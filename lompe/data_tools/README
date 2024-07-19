@@ -6,4 +6,6 @@ Currently handles the following data sets:
 	- SuperDARN (gridmap)
 	- SuperMAG (netcdf format)
 	- Iridium (from AMPERE, netcdf format)
+	- CHAMP (cdf format)
+	- SWARM (using viresclient)
 
