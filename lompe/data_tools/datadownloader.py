@@ -49,7 +49,7 @@ def download_sussi_file(file_url, destination):
         print(f"Failed to download {file_url}: {e}")
 
 
-def download_ssusi(event, source='cdaweb'):
+def download_sussi(event, source='cdaweb'):
     """Dowloading data from the SSUSI instrument onboard the DMSP satellites for a given event date.
 
     Args:
