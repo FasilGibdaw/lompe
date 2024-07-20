@@ -15,64 +15,62 @@ from lompe.data_tools.supermag_api import SuperMAGGetData, sm_GetUrl, sm_coreurl
 from lompe.data_tools.supermag_direct import download_data_for_event as ddfe
 import glob
 import shutil
+import itertools
+from concurrent.futures import ProcessPoolExecutor
 
 
-def download_sussi(event, destination='downloads', source='jhuapl'):
-    """function to download SSUSI data for a given event date
-    Example usage:
-        event = '2014-08-20'
-        detination = 'downloads'
-        source = 'cdaweb'
-        download_sussi(event, destination, source)
+def fetch_sussi_urls(sat, year, doy, source):
+    if source == 'jhuapl':
+        url = f"https://ssusi.jhuapl.edu/data_retriver?spc=f{sat}&type=edr-aur&year={year}&Doy={doy}"
+    elif source == 'cdaweb':
+        url = f'https://cdaweb.gsfc.nasa.gov/pub/data/dmsp/dmspf{sat}/ssusi/data/edr-aurora/{year}/{doy}/'
+    else:
+        print(f"Unsupported source: {source}")
+        return []
+
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    urls = [urljoin(url, link.get('href')) for link in soup.find_all(
+        'a', href=True) if link.get('href').lower().endswith('.nc')]
+    return urls
+
+
+def download_sussi_file(file_url, destination):
+    try:
+        response = requests.get(file_url, stream=True)
+        response.raise_for_status()  # raise an HTTPError on bad response
+        filename = os.path.join(destination, os.path.basename(file_url))
+
+        with open(filename, 'wb') as file:
+            for chunk in response.iter_content(chunk_size=65536):
+                if chunk:  # Filter out keep-alive new chunks
+                    file.write(chunk)
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to download {file_url}: {e}")
+
+
+def download_ssusi(event, source='cdaweb'):
+    """Dowloading data from the SSUSI instrument onboard the DMSP satellites for a given event date.
 
     Args:
-        event (str): format YYYY-MM-DD
-        destination (str, optional): where to save the data. Defaults to 'downloads'.
-        source (str, optional): Defaults to 'jhuapl'. cdaweb is the other option.
-
-    Note: I (Fasil) prefer the cdaweb because it is more faster to downlaod.
-          but the read_sussi function in lompe package is tailored to the jhuapl data.
+        event strin: format 'YYYY-MM-DD'
+        source (str, optional): data source. Defaults to 'cdaweb'. Another option is 'jhuapl'.
     """
-
     year = int(event[0:4])
     doy = date2doy(event)
+    destination = 'sussi_tempfiles'
     os.makedirs(destination, exist_ok=True)
-    # iterate over the satellites with SSUSI data
-    for sat in [16, 17, 18, 19]:
-        if source == 'jhuapl':
-            url = f"https://ssusi.jhuapl.edu/data_retriver?spc=f{sat}&type=edr-aur&year={year}&Doy={doy}"
-        elif source == 'cdaweb':
-            url = f'https://cdaweb.gsfc.nasa.gov/pub/data/dmsp/dmspf{sat}/ssusi/data/edr-aurora/{year}/{doy}/'
-        else:
-            print(f"Unsupported source: {source}")
-            continue
-        # content of the webpage
-        response = requests.get(url)
-        soup = BeautifulSoup(response.content, 'html.parser')
 
-        for link in soup.find_all('a', href=True):
-            href = link.get('href')
-            if href.lower().endswith('.nc'):  # looking for .NC (jhuapl) and .nc (cdaweb) files
-                file_url = urljoin(url, href)
-                try:
-                    # Download the file
-                    # probably too much print uncommented the print statement if needed
-                    # print(f"Downloading {file_url}...")
-                    response = requests.get(file_url, stream=True)
-                    response.raise_for_status()  # raise an HTTPError on bad response
-                    filename = os.path.join(
-                        destination, os.path.basename(file_url))
+    # Use ProcessPoolExecutor to fetch URLs concurrently
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        results = executor.map(fetch_sussi_urls, [16, 17, 18, 19], [
+                               year] * 4, [doy] * 4, [source] * 4)
+        all_urls = list(itertools.chain.from_iterable(results))
 
-                    with open(filename, 'wb') as file:
-                        # 64KB chuck size
-                        for chunk in response.iter_content(chunk_size=65536):
-                            if chunk:  # Filter out keep-alive new chunks
-                                file.write(chunk)
-                except requests.exceptions.RequestException as e:
-                    print(f"Failed to download {file_url}: {e}")
-
-    print("Download complete!")
-    return filename
+    # Use ProcessPoolExecutor to download files concurrently
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        executor.map(download_sussi_file, all_urls,
+                     [destination] * len(all_urls))
 
 
 def download_smag(event, tempfile_path='./', hemi='all'):
@@ -208,9 +206,9 @@ def ampere_coreurl(page, logon, start, extent):
     baseurl = "https://ampere.jhuapl.edu/"
 
     mytime = ampere_parsestart(start)
-    urlstr = baseurl + 'services/'+page+'?'
-    urlstr += '&logon='+logon
-    urlstr += '&start='+mytime
+    urlstr = baseurl + 'services/' + page + '?'
+    urlstr += '&logon=' + logon
+    urlstr += '&start=' + mytime
 
     urlstr += '&extent=' + ("%12.12d" % extent)
 
@@ -334,11 +332,11 @@ def download_champ(event, basepath='./', tempfile_path='./'):
     year = event[:4]
     savefile = tempfile_path + f'CH_ME_MAG_LR_3_{event_date}_0102.cdf'
     processed_file = tempfile_path + f'{event_date}_champ.h5'
-    
+
     # Check if the processed file already exists
     if os.path.isfile(processed_file):
         return processed_file
-    
+
     # Check if the raw file already exists
     if not os.path.isfile(savefile):
         session = requests.Session()
@@ -352,29 +350,30 @@ def download_champ(event, basepath='./', tempfile_path='./'):
                     file.write(response.content)
                 print(f"Downloading {savefile} is successful!")
             else:
-                print(f"Failed to download the file. Status code: {response.status_code}")
+                print(
+                    f"Failed to download the file. Status code: {response.status_code}")
                 return None
         except Exception as e:
             print(e)
             return None
-    
+
     # Process the downloaded CDF file ot get the magnetic disturbance
     try:
         cdf_file = cdflib.CDF(savefile)
         mag = cdf_file.varget('B_NEC')  # space magnetometer data
-        
+
         # geocentric coords of CHAMP orbit
         theta = 90 - cdf_file.varget('Latitude')
         phi = cdf_file.varget('Longitude')
         r = cdf_file.varget('Radius') / 1000
-        
+
         time = cdflib.cdfepoch.to_datetime(cdf_file.varget('Timestamp'))
-        
+
         # using IGRF to calculate magnetic disturbance (dB) registered by CHAMP
         Br, Btheta, Bphi = ppigrf.igrf_gc(r, theta, phi, time[0])
         B0 = np.vstack((-Btheta.flatten(), Bphi.flatten(), -Br.flatten()))
         dB = mag.T - B0
-        
+
         champ_df = pd.DataFrame({
             'Be': dB[1],
             'Bn': dB[0],
@@ -390,7 +389,7 @@ def download_champ(event, basepath='./', tempfile_path='./'):
         return None
 
 
-def download_file(url, save_path):
+def download_sdarn_file(url, save_path):
     # function to download a file from a URL and save it to a specific path
     response = requests.get(url)
     if response.status_code == 200:
@@ -453,7 +452,7 @@ def download_sdarn_files(event, basepath='./'):
                 # print(url_to_download)
                 save_path = basepath + \
                     url_to_download.split('/')[-1].split('?')[0]
-                download_file(url_to_download, save_path)
+                download_sdarn_file(url_to_download, save_path)
             # else:
             #     print('No file found')
     else:
@@ -536,16 +535,16 @@ def download_swarm(event, tempfile_path='./'):
     """
 
     savefile = tempfile_path + event.replace('-', '') + '_swarm.h5'
-    
+
     if os.path.isfile(savefile):
         return savefile
-    
+
     try:
         from viresclient import SwarmRequest
     except ModuleNotFoundError:
         print('Please install viresclient using "pip install viresclient"')
         return
-    # checking if token is present if not directing to the website to configure it 
+    # checking if token is present if not directing to the website to configure it
     try:
         with open(os.path.expanduser('~/.viresclient.ini'), 'r') as file:
             lines = file.readlines()
@@ -561,7 +560,8 @@ def download_swarm(event, tempfile_path='./'):
         request = SwarmRequest()
 
         event_start = dt.datetime.strptime(event, '%Y-%m-%d')
-        event_end = event_start + dt.timedelta(hours=23, minutes=59, seconds=59)
+        event_end = event_start + \
+            dt.timedelta(hours=23, minutes=59, seconds=59)
         df = pd.DataFrame()
 
         for swarm_satellite in ['A', 'B', 'C']:
@@ -577,19 +577,21 @@ def download_swarm(event, tempfile_path='./'):
                 show_progress=False
             )
             df = pd.concat([df, data.as_dataframe(expand=True)])
-        
+
         # Removing the background field from IGRF
         df['B_n'] = df['B_NEC_N'] - df['B_NEC_IGRF_N']
         df['B_e'] = df['B_NEC_E'] - df['B_NEC_IGRF_E']
-        df['B_u'] = -(df['B_NEC_C'] - df['B_NEC_IGRF_C']) # Upward is negative in the NEC systema
-        
+        # Upward is negative in the NEC systema
+        df['B_u'] = -(df['B_NEC_C'] - df['B_NEC_IGRF_C'])
+
         df.sort_values(by='Timestamp', inplace=True)
         df.reset_index(drop=True, inplace=True)
         df.to_hdf(savefile, key='df', mode='w')
         return savefile
-        
+
     except Exception as e:
         print(f"An error occurred while processing the Swarm data: {e}")
+
 
 def download_dmsp():
     pass
