@@ -18,20 +18,37 @@ import shutil
 import itertools
 from concurrent.futures import ProcessPoolExecutor
 
+## extensive list of functions (including helper functions) to download data from different sources for a given event date
+## the functions are designed to be used in the lompe package for data loading and processing
+## this has to be integrated with the dataloader.py in the lompe package at some level to get lompe data format
+
+## the idea is to merge the two files (datadownloader.py and dataloader.py) into one file in the lompe package
 
 def fetch_sussi_urls(sat, year, doy, source):
+    doy_str = f"{doy:03d}"  # Zero-pad the day of year to three digits
     if source == 'jhuapl':
-        url = f"https://ssusi.jhuapl.edu/data_retriver?spc=f{sat}&type=edr-aur&year={year}&Doy={doy}"
+        url = f"https://ssusi.jhuapl.edu/data_retriver?spc=f{sat}&type=edr-aur&year={year}&Doy={doy_str}"
     elif source == 'cdaweb':
-        url = f'https://cdaweb.gsfc.nasa.gov/pub/data/dmsp/dmspf{sat}/ssusi/data/edr-aurora/{year}/{doy}/'
+        url = f'https://cdaweb.gsfc.nasa.gov/pub/data/dmsp/dmspf{sat}/ssusi/data/edr-aurora/{year}/{doy_str}/'
     else:
         print(f"Unsupported source: {source}")
         return []
 
-    response = requests.get(url)
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # raise an HTTPError on bad response
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to fetch URL probably no data : \n{e}")
+        return []
+
     soup = BeautifulSoup(response.content, 'html.parser')
     urls = [urljoin(url, link.get('href')) for link in soup.find_all(
         'a', href=True) if link.get('href').lower().endswith('.nc')]
+
+    if not urls:
+        print(
+            f"No .nc files found for satellite F{sat} on day {doy_str} of year {year} from source {source}")
+
     return urls
 
 
