@@ -22,13 +22,14 @@ import pandas as pd
 import datetime as dt
 import xarray as xr
 import numpy as np
+from lompe.datatools.datadownloader import date2doy
 
 # degrees <-> radians conversion
 d2r = np.pi / 180.
 r2d = 180. / np.pi
 
 
-def read_ssusi(event, hemi='north', basepath='./', tempfile_path='./'):
+def read_ssusi(event, hemi='north', basepath='./', tempfile_path='./', source='jhuapl'):
     """
 
     Called and used for modelling auroral conductance in cmodel.py.
@@ -51,6 +52,9 @@ def read_ssusi(event, hemi='north', basepath='./', tempfile_path='./'):
     tempfile_path : str, optional
         Location for storing processed SSUSI data.
         Default: './'
+    source : str, optional
+        Specify source of SUSSI data. 
+        Default: 'jhuapl', other option is 'cdaweb'
 
     Returns
     -------
@@ -88,10 +92,15 @@ def read_ssusi(event, hemi='north', basepath='./', tempfile_path='./'):
             'read_ssusi: Could not load netCDF4 module. Will not be able to read SSUSI-files from APL.')
 
     imgs = []  # List to hold all images. Converted to xarray later.
+    doy_str = f"{date2doy(event):03d}"
 
     for sat in ['F16', 'F17', 'F18', 'F19']:
-        files = glob.glob(basepath + '*' + sat + '*' +
-                          event[0:4]+event[5:7]+event[8:10] + '*.NC')
+        if source == 'jhuapl':
+            files = glob.glob(basepath + '*' + sat + '*' +
+                              event[0:4] + event[5:7] + event[8:10] + '*.NC')
+        elif source == 'cdaweb':
+            files = glob.glob(basepath + '*' + sat + '*' +
+                              event[0:4] + doy_str + '*.nc')
         files.sort()
         if len(files) == 0:
             continue
@@ -163,8 +172,8 @@ def read_ssusi(event, hemi='north', basepath='./', tempfile_path='./'):
                     hr = hr - 24
                     center_hr = center_hr - 24
 
-                m = int((center_hr - hr)*60)
-                s = round(((center_hr - hr)*60 - m)*60)
+                m = int((center_hr - hr) * 60)
+                s = round(((center_hr - hr) * 60 - m) * 60)
                 if s == 60:
                     t0 = dt.datetime(year, 1, 1, hr, m, 59) + \
                         dt.timedelta(seconds=1)
@@ -199,7 +208,7 @@ def read_ssusi(event, hemi='north', basepath='./', tempfile_path='./'):
 
     else:     # save as netcdf in specified path
         imgs = xr.concat(imgs, dim='date')
-        imgs = imgs.assign({'hemisphere':  hemi})
+        imgs = imgs.assign({'hemisphere': hemi})
         imgs = imgs.sortby(imgs['date'])
         print('DMSP SSUSI file saved: ' + savefile)
 
@@ -498,8 +507,8 @@ def read_sdarn(event, basepath='./', tempfile_path='./', hemi='north'):
 
         stime = dt.datetime(tt['start.year'], tt['start.month'], tt['start.day'],
                             tt['start.hour'], tt['start.minute'], int(tt['start.second']))
-        etime = dt.datetime(tt['end.year'],   tt['end.month'],   tt['end.day'],
-                            tt['end.hour'],   tt['end.minute'],   int(tt['end.second']))
+        etime = dt.datetime(tt['end.year'], tt['end.month'], tt['end.day'],
+                            tt['end.hour'], tt['end.minute'], int(tt['end.second']))
         duration = etime - stime
 
         temp = pd.DataFrame()
@@ -529,7 +538,7 @@ def read_sdarn(event, basepath='./', tempfile_path='./', hemi='north'):
         temp.loc[:, 'range'] = tt['vector.pwr.median']       # in km
         # spectral width in m/s
         temp.loc[:, 'wdt'] = tt['vector.wdt.median']
-        temp.loc[:, 'time'] = stime + duration/2
+        temp.loc[:, 'time'] = stime + duration / 2
 
         ddd = pd.concat([ddd, temp], ignore_index=True)
 
@@ -757,17 +766,17 @@ def getbearing(lat0, lon0, lat1, lon1):
 
     """
 
-    lat0 = lat0*d2r
-    lon0 = lon0*d2r
-    lat1 = lat1*d2r
-    lon1 = lon1*d2r
+    lat0 = lat0 * d2r
+    lon0 = lon0 * d2r
+    lat1 = lat1 * d2r
+    lon1 = lon1 * d2r
 
     coslt1 = np.cos(lat1)
     sinlt1 = np.sin(lat1)
     coslt0 = np.cos(lat0)
     sinlt0 = np.sin(lat0)
-    cosl0l1 = np.cos(lon1-lon0)
-    sinl0l1 = np.sin(lon1-lon0)
+    cosl0l1 = np.cos(lon1 - lon0)
+    sinl0l1 = np.sin(lon1 - lon0)
 
     cosc = sinlt0 * sinlt1 + coslt0 * coslt1 * cosl0l1
     # Avoid roundoff problems by clamping cosine range to [-1,1].
@@ -782,8 +791,8 @@ def getbearing(lat0, lon0, lat1, lon1):
     sinaz = np.zeros(len(lat0))
     cosaz = np.ones(len(lat0))
     cosaz[small] = (coslt0[small] * sinlt1[small] - sinlt0[small]
-                    * coslt1[small]*cosl0l1[small]) / sinc[small]
-    sinaz[small] = sinl0l1[small]*coslt1[small]/sinc[small]
+                    * coslt1[small] * cosl0l1[small]) / sinc[small]
+    sinaz[small] = sinl0l1[small] * coslt1[small] / sinc[small]
 
     return np.arctan2(sinaz, cosaz)
 
