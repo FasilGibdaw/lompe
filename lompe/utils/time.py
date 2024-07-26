@@ -1,6 +1,7 @@
 """ time tools """
 import numpy as np
 import pandas as pd
+import datetime as dt
 
 
 def date_to_doy(month, day, leapyear=False):
@@ -114,3 +115,8 @@ def yearfrac_to_datetime(fracyear):
 
     # adding them produces the datetime:
     return (start_year + delta_year).to_pydatetime()
+
+def date2doy(date_str):
+    date = dt.datetime.strptime(date_str, "%Y-%m-%d")
+    return date.timetuple().tm_yday
+

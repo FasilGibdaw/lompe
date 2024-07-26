@@ -17,6 +17,7 @@ import glob
 import shutil
 import itertools
 from concurrent.futures import ProcessPoolExecutor
+from lompe.utils.time import date2doy
 
 ## extensive list of functions (including helper functions) to download data from different sources for a given event date
 ## the functions are designed to be used in the lompe package for data loading and processing
@@ -614,9 +615,9 @@ def download_dmsp():
     pass
 
 
-def date2doy(date_str):
-    date = dt.datetime.strptime(date_str, "%Y-%m-%d")
-    return date.timetuple().tm_yday
+# def date2doy(date_str):
+#     date = dt.datetime.strptime(date_str, "%Y-%m-%d")
+#     return date.timetuple().tm_yday
 
 
 if __name__ == '__main__':
