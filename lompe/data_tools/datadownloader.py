@@ -587,7 +587,8 @@ def download_swarm(event, tempfile_path='./'):
             request.set_products(
                 measurements=["F", "B_NEC"],
                 models=["IGRF", "MCO_SHA_2D"],
-                sampling_step="PT10S"
+                sampling_step="PT10S", # 10 seconds if needed PT1M for 1 minute
+                auxiliaries = ["MLT", "OrbitNumber", 'QDLat', 'QDLon'] # quasi-dipole latitude and longitude
             )
             data = request.get_between(
                 start_time=event_start,

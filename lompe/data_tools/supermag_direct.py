@@ -3,6 +3,8 @@ from lompe.data_tools.supermag_api import sm_GetUrl, sm_coreurl, sm_keycheck_dat
 import requests
 import certifi
 import os
+from requests.exceptions import RequestException
+import time
 
 # this is a set of helper functions to download data from SuperMAG
 # it is adjusted in a way that it downlaods the json temporarily in the tempfiles folder
@@ -16,21 +18,51 @@ import os
 
 # due to the multiprocessing issues, this should be imported as a module in the datadownloader script
 
+# Note: I have added a retry mechanism to handle the zero byte response from the requests (06 August 2024)
+        # using retries and backoff_factor
+        # it will retry the request for a number of times before giving up, but i am not sure this is the best way to handle this
 
-def data_download_for_station(args):
+def data_download_for_station(args, retries=5, backoff_factor=0.5):
     # DO NOT EDIT THIS FUNCTION
     urlstr, station = args
     url = urlstr + '&station=' + station.upper()
-    response = requests.get(url, verify=certifi.where())
+    
+    for i in range(retries):
+        try:
+            response = requests.get(url, verify=certifi.where())
+            if response.status_code == 200:
+                if response.content:  # Check if the response content is not zero bytes
+                    with open(f'./tempfiles/{station}_data.txt', 'wb') as file:
+                        file.write(response.content)
+                    return None
+                else:
+                    print(f"Received zero bytes for station {station}")
+                    raise RequestException("Received zero bytes.")
+            else:
+                print(f"Failed to retrieve data for station {station}: {response.status_code}")
+                raise RequestException(f"Bad status code: {response.status_code}")
+        except RequestException as e:
+            print(f"Attempt {i + 1} for station {station} failed with error: {e}")
+            time.sleep(backoff_factor * (2 ** i))
+    
+    print(f"Failed to download data for station {station} after {retries} attempts.")
+    return None
 
-    if response.status_code == 200:
-        with open(f'./tempfiles/{station}_data.txt', 'wb') as file:
-            file.write(response.content)
-        return None
-    else:
-        print(
-            f"Failed to retrieve data for station {station}: {response.status_code}")
-        return None
+
+# def data_download_for_station(args):
+#     # DO NOT EDIT THIS FUNCTION
+#     urlstr, station = args
+#     url = urlstr + '&station=' + station.upper()
+#     response = requests.get(url, verify=certifi.where())
+
+#     if response.status_code == 200:
+#         with open(f'./tempfiles/{station}_data.txt', 'wb') as file:
+#             file.write(response.content)
+#         return None
+#     else:
+#         print(
+#             f"Failed to retrieve data for station {station}: {response.status_code}")
+#         return None
 
 
 def download_data_for_event(start):
