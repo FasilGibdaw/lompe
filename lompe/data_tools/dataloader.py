@@ -313,26 +313,32 @@ def read_ssies(event, sat, basepath='./', tempfile_path='./', forcenew=False, **
 
     dmsp = pd.DataFrame()
     dmsp2 = pd.DataFrame()   # for the density fraction
-
-    for i in expList:        # get neccessary files
+    date_str = event.replace('-', '')
+    no_data_found = True
+    for i in expList:
         fileList = testData.getExperimentFiles(i.id)
         filenames = []
 
         for fname in fileList:
             filenames.append(fname.name)
-
-        ssies = str([s for s in filenames if '_' + str(sat) + 's1' in s][0])
-        temp_dens = str(
-            [s for s in filenames if '_' + str(sat) + 's4' in s][0])
+        filenames = [filename for filename in filenames if date_str in filename]
+        if len(filenames) == 0:
+            continue
+        no_data_found = False
+            # ssies = str([s for s in filenames if '_' + str(sat) + 's1' in s][0])
+        ssies = [s for s in filenames if 's1.' in s]
+        # temp_dens = str(
+        #     [s for s in filenames if '_' + str(sat) + 's4.' in s][0])
+        temp_dens = [s for s in filenames if '_' + str(sat) + 's4.' in s]
 
         datafile = basepath + 'ssies_temp_' + event + '.hdf5'
         result = testData.downloadFile(
-            ssies, datafile, **madrigal_kwargs, format="hdf5")
+            ssies[0], datafile, **madrigal_kwargs, format="hdf5")
         f = pd.read_hdf(datafile, mode='r', key='Data/Table Layout')
 
         tempdensfile = basepath + 'ssies_tempdens_data_' + event + '.hdf5'
         result = testData.downloadFile(
-            temp_dens, tempdensfile, **madrigal_kwargs, format="hdf5")
+            temp_dens[0], tempdensfile, **madrigal_kwargs, format="hdf5")
         f2 = pd.read_hdf(tempdensfile, mode='r', key='Data/Table Layout')
 
         use = (f.ut1_unix >= usTime) & (f.ut1_unix < ueTime)
@@ -343,8 +349,11 @@ def read_ssies(event, sat, basepath='./', tempfile_path='./', forcenew=False, **
         dmsp = pd.concat([dmsp, temp])
         dmsp2 = pd.concat([dmsp2, temp2])
 
-    dmsp.index = np.arange(len(dmsp))
-    dmsp2.index = np.arange(len(dmsp2))
+        dmsp.index = np.arange(len(dmsp))
+        dmsp2.index = np.arange(len(dmsp2))
+    if no_data_found:
+        print('No data found for ' + event + ' and satellite ' + str(sat))
+        return None
 
     # set datetime as index
     times = []
