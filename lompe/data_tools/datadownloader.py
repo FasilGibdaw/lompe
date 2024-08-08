@@ -777,7 +777,8 @@ def download_dmsp_ssies(event, sat, tempfile_path='./', **madrigal_kwargs):
     os.remove(filename2)
     return savefile
 
-
+def download_eiscat():
+    pass 
 # def date2doy(date_str):
 #     date = dt.datetime.strptime(date_str, "%Y-%m-%d")
 #     return date.timetuple().tm_yday
