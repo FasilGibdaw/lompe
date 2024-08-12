@@ -1,24 +1,13 @@
-from lompe.data_tools.dataloader import cross_track_los, radar_losvec_from_mag
-from scipy import interpolate
 import warnings
 import xarray as xr
 import numpy as np
 import pandas as pd
 import requests
-from requests_ftp import ftp
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
 import datetime as dt
 import os
-import cdflib
-import ppigrf
-import certifi
-from lompe.data_tools.supermag_api import SuperMAGGetData, sm_GetUrl, sm_coreurl
-from lompe.data_tools.supermag_direct import download_data_for_event as ddfe
 import glob
 import shutil
-import itertools
-from concurrent.futures import ProcessPoolExecutor
 from lompe.utils.time import date2doy
 
 warnings.filterwarnings("ignore")
@@ -27,8 +16,10 @@ warnings.filterwarnings("ignore")
 # the functions are designed to be used in the lompe package for data loading and processing
 # this has to be integrated with the dataloader.py in the lompe package at some level to get lompe data format
 
-# the idea is to merge the two files (datadownloader.py and dataloader.py) into one file in the lompe package
+# the idea is to merge the two files (datadownloader.py and dataloader.py) into one file in the lompe package, for the time being we need to keep 
+# both, some functions imported from dataloader.py are in use in this script
 
+# Note that: lazy importing is implemented here
 
 def fetch_sussi_urls(sat, year, doy, source):
     doy_str = f"{doy:03d}"  # Zero-pad the day of year to three digits
@@ -46,7 +37,8 @@ def fetch_sussi_urls(sat, year, doy, source):
     except requests.exceptions.RequestException as e:
         print(f"Failed to fetch URL probably no data : \n{e}")
         return []
-
+    
+    from urllib.parse import urljoin
     soup = BeautifulSoup(response.content, 'html.parser')
     urls = [urljoin(url, link.get('href')) for link in soup.find_all(
         'a', href=True) if link.get('href').lower().endswith('.nc')]
@@ -83,7 +75,7 @@ def download_sussi(event, source='cdaweb'):
     doy = date2doy(event)
     destination = 'sussi_tempfiles'
     os.makedirs(destination, exist_ok=True)
-
+    from concurrent.futures import ProcessPoolExecutor
     # Use ProcessPoolExecutor to fetch URLs concurrently
     with ProcessPoolExecutor(max_workers=4) as executor:
         results = executor.map(fetch_sussi_urls, [16, 17, 18, 19], [
@@ -91,6 +83,7 @@ def download_sussi(event, source='cdaweb'):
         all_urls = list(itertools.chain.from_iterable(results))
 
     # Use ProcessPoolExecutor to download files concurrently
+    import itertools
     with ProcessPoolExecutor(max_workers=4) as executor:
         executor.map(download_sussi_file, all_urls,
                      [destination] * len(all_urls))
@@ -121,6 +114,7 @@ def download_smag(event, tempfile_path='./', hemi='all'):
     start = event + 'T00:00:00'
     duration = 86400  # Duration in seconds (one day)
     # lompe username is already registered in the API
+    from lompe.data_tools.supermag_api import SuperMAGGetData, sm_GetUrl, sm_coreurl
     urlstr = sm_coreurl('inventory.php', 'lompe', start, duration)
     success, stations = sm_GetUrl(urlstr, 'raw')
     stations = stations[1:-1]
@@ -270,7 +264,7 @@ def download_iridium(event, basepath='./', tempfile_path='./', file_name=''):
     if os.path.isfile(savefile):  # checks if file already exists
         return savefile
     else:
-
+        import certifi
         # URL to download data from (lompe username is already registered in the API)
         urlstr = ampere_coreurl('data-rawdB.php', 'lompe', start, duration)
 
@@ -307,6 +301,7 @@ def download_supermag(event, tempfile_path='./'):
         return savefile
     else:
         # run the function to download the data in the tempfiles folder (later to be deleted if successful)
+        from lompe.data_tools.supermag_direct import download_data_for_event as ddfe
         ddfe(start)
 
         files = glob.glob('./tempfiles/*.txt')
@@ -362,6 +357,7 @@ def download_champ(event, basepath='./', tempfile_path='./'):
 
     # Check if the raw file already exists
     if not os.path.isfile(savefile):
+        from requests_ftp import ftp
         session = requests.Session()
         session.mount('ftp://', ftp.FTPAdapter())
         ftp_url = f"ftp://isdcftp.gfz-potsdam.de/champ/ME/Level3/MAG/V0102/{year}/CH_ME_MAG_LR_3_{event_date}_0102.cdf"
@@ -382,6 +378,8 @@ def download_champ(event, basepath='./', tempfile_path='./'):
 
     # Process the downloaded CDF file ot get the magnetic disturbance
     try:
+        import cdflib
+        import ppigrf
         cdf_file = cdflib.CDF(savefile)
         mag = cdf_file.varget('B_NEC')  # space magnetometer data
 
@@ -491,6 +489,7 @@ def download_sdarn(event, basepath='./', tempfile_path='./'):
     if os.path.isfile(savefile):
         return savefile
     else:
+        from lompe.data_tools.dataloader import radar_losvec_from_mag
         os.makedirs(basepath + 'sdarn_files', exist_ok=True)
         download_sdarn_files(event, basepath + '/sdarn_files/')
         # looking for the .nc files for the event
@@ -724,6 +723,8 @@ def download_dmsp_ssies(event, sat, tempfile_path='./', **madrigal_kwargs):
 
     # Smooth the orbit
     import matplotlib
+    from scipy import interpolate
+    from lompe.data_tools.dataloader import cross_track_los
 
     # latitude (geodetic)
     tck = interpolate.splrep(matplotlib.dates.date2num(dmsp.index[::60].append(dmsp.index[-1:])),
