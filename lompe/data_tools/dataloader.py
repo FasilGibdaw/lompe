@@ -326,7 +326,7 @@ def read_ssies(event, sat, basepath='./', tempfile_path='./', forcenew=False, **
             continue
         no_data_found = False
             # ssies = str([s for s in filenames if '_' + str(sat) + 's1' in s][0])
-        ssies = [s for s in filenames if 's1.' in s]
+        ssies = [s for s in filenames if '_' + str(sat) +  's1.' in s]
         # temp_dens = str(
         #     [s for s in filenames if '_' + str(sat) + 's4.' in s][0])
         temp_dens = [s for s in filenames if '_' + str(sat) + 's4.' in s]
