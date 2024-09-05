@@ -28,7 +28,7 @@ def download_ssusi_cdaweb(event, hemi='north', basepath='./ssusi_tempfiles', tem
     Called and used for modelling auroral conductance in cmodel.py.
 
     Extract the relevant SSUSI info from netcdf-files downloaded from APL server.
-    https://ssusi.jhuapl.edu/data_products (EDR AURORA)
+    https://cdaweb.gsfc.nasa.gov/pub/data/dmsp/ (ssusi/data/edr-aurora)
     Will load all SSUSI data from specified hemisphere into xarray object. 
     Any DMSP Block 5D satellite (F16-19) available in folder will be used.
 
@@ -47,7 +47,7 @@ def download_ssusi_cdaweb(event, hemi='north', basepath='./ssusi_tempfiles', tem
         Default: './'
     source : str, optional
         Specify source of SUSSI data. 
-        Default: 'jhuapl', other option is 'cdaweb'
+        Default: 'cdaweb' see download_ssusi for 'jhuapl'
 
     Returns
     -------
@@ -56,7 +56,11 @@ def download_ssusi_cdaweb(event, hemi='north', basepath='./ssusi_tempfiles', tem
 
     """
     '''
-    Extract the relevant info from netcdf-files downloaded from APL server:
+    Using the CDAWeb server here eliminates the need for checking if the data is from the same day or not.
+    The data is already sorted by date and time. From the APL sever, there might be a need to check if the data is from the same day.
+    (see download_ssusi function)
+    
+    Extract the relevant info from downloaded netcdf-files (similar to from APL server, but from CDAWeb):
     Note that these data are gridded on a 363,363 geomagnetic grid. We assume this is AACGM,
     based on email correspondence with L. Paxton. This is not clear from the documentation.
     No geographic information of these gridded data exist in the EDR aurora files downloaded
