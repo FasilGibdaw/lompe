@@ -1160,6 +1160,10 @@ def download_dmsp_ssies(event, sat, tempfile_path='./', **madrigal_kwargs):
                              pd.concat([dmsp.glon[::60], (dmsp.glon[-1:])]).values, k=2)
     glon = interpolate.splev(matplotlib.dates.date2num(dmsp.index), tck)
 
+    # i got negative and above 360 values even negative are excluded before the interpolation, due to the interpolation, handling it here
+    glon[glon < 0] += 360
+    glon = np.mod(glon, 360)
+
     # altitude (geodetic)
     tck = interpolate.splrep(matplotlib.dates.date2num(dmsp.index[::60].append(dmsp.index[-1:])),
                              pd.concat([dmsp.gdalt[::60], (dmsp.gdalt[-1:])]).values, k=2)
