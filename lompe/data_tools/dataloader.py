@@ -702,7 +702,7 @@ def read_iridium(event, basepath='./', tempfile_path='./', file_name=''):
             fn = files[0]
         except:
             raise FileNotFoundError(
-                'Cannot find Iridium netcdf in specified folder.')
+                'Cannot find Iridium netcdf in specified folder.')  
 
     iridset = xr.load_dataset(fn, engine='netcdf4')
 

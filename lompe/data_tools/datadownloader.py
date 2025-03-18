@@ -630,6 +630,7 @@ def download_iridium(event, basepath='./', tempfile_path='./', file_name=''):
         # URL to download data from (lompe username is already registered in the API)
         urlstr = ampere_coreurl('data-rawdB.php', 'lompe', start, duration)
 
+        # verify=certifi.where())
         response = requests.get(urlstr, verify=certifi.where())
 
         # Check if the request was successful
