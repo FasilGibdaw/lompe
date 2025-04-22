@@ -1032,7 +1032,7 @@ def download_swarm(event, tempfile_path='./'):
         df['B_u'] = -(df['B_NEC_C'] - df['B_NEC_IGRF_C'])
 
         df.sort_values(by='Timestamp', inplace=True)
-        df.reset_index(drop=True, inplace=True)
+        df.reset_index(inplace=True)
         df.to_hdf(savefile, key='df', mode='w')
         return savefile
 
