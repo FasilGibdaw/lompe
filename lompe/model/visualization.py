@@ -65,7 +65,8 @@ funcs = {'efield':           'E',
          'fac':              'FAC',
          'hall':             'hall_conductance',
          'pedersen':         'pedersen_conductance',
-         'secs_current':     'get_B_SECS_currents'}  # This attribute doesn't exist currently
+         # This attribute doesn't exist currently
+         'secs_current':     'get_B_SECS_currents'}
 
 # GLOBAL PARAMETERS DONE
 ########################
@@ -142,7 +143,8 @@ def plot_mlt(ax, model, time, apex, mltlevels=np.r_[0:24:3], txtkwargs=None, **k
         mlat, mlon = model.grid_J.lat, model.grid_J.lon
     else:
         mlat, mlon = apex.geo2apex(
-            model.grid_J.lat, model.grid_J.lon, (model.R-RE)*1e-3)  # to magnetic
+            # to magnetic
+            model.grid_J.lat, model.grid_J.lon, (model.R-RE)*1e-3)
 
     cd = Dipole(apex.year)
     mlt = cd.mlon2mlt(mlon, time)
@@ -499,7 +501,7 @@ def polarplot(ax, model, apex, time, dV=None, **clkw):
         keywords for plotting coastlines passed to Polarplot.coastlines()
     """
 
-    pax = Polarplot(ax, minlat=70)
+    pax = Polarplot(ax, minlat=50)
     cd = Dipole(apex.year)
 
     # coastlines

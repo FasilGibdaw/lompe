@@ -1,3 +1,4 @@
+# fmt: off
 """ Conductance model class """
 
 import apexpy
@@ -122,14 +123,39 @@ class Cmodel(object):
         use = ssusi.satellite == self.sat
         ssusi = ssusi.sel(date = use)
         ssusi_i = ssusi.sel(date = self.stime, method = 'nearest') # closest in time ssusi image to use
-        glat_ssusi, glon_ssusi = a.convert(ssusi_i.mlat, ssusi_i.mlt, 'mlt', 'geo', height = 110,
+        mlat = ssusi_i.mlat.values.flatten().astype(float)
+        mlt = ssusi_i.mlt.values.flatten().astype(float)
+        glat_ssusi, glon_ssusi = a.convert(mlat, mlt, 'mlt', 'geo', height = 110,
                                            datetime = pd.to_datetime(ssusi_i['date'].values))
-
+        glat_ssusi = np.asarray(glat_ssusi, dtype=float)
+        glon_ssusi = np.asarray(glon_ssusi, dtype=float)
         # make median binned conductance image
-        use = np.isfinite(ssusi_i[self.param]) & self.grid.ingrid(glon_ssusi, glat_ssusi, ext_factor = 1)
-        index_i, index_j = self.grid.bin_index(glon_ssusi[use], glat_ssusi[use]) # i,j index in grid of each conductance observation
-        _index = self.grid._index(index_i, index_j)                              # correspoinding index in 1D format
-        df = pd.DataFrame({'_index':_index, 'index_i':index_i, 'index_j':index_j, 'param':ssusi_i[self.param].values[use], 'SH':ssusi_i['SH'].values[use], 'SP':ssusi_i['SP'].values[use]})
+        # use = np.isfinite(ssusi_i[self.param]) & self.grid.ingrid(glon_ssusi, glat_ssusi, ext_factor = 1)
+        # index_i, index_j = self.grid.bin_index(glon_ssusi[use], glat_ssusi[use]) # i,j index in grid of each conductance observation
+        # _index = self.grid._index(index_i, index_j)                              # correspoinding index in 1D format
+        # df = pd.DataFrame({'_index':_index, 'index_i':index_i, 'index_j':index_j, 'param':ssusi_i[self.param].values[use], 'SH':ssusi_i['SH'].values[use], 'SP':ssusi_i['SP'].values[use]})
+
+        # 7. Extract and flatten data values
+        param_data = ssusi_i[self.param].values.flatten()
+        sh_data = ssusi_i['SH'].values.flatten()
+        sp_data = ssusi_i['SP'].values.flatten()
+
+        # 8. Mask valid data inside grid
+        use = np.isfinite(param_data) & self.grid.ingrid(glon_ssusi, glat_ssusi, ext_factor=1)
+
+        # 9. Bin valid values into grid
+        index_i, index_j = self.grid.bin_index(glon_ssusi[use], glat_ssusi[use])
+        _index = self.grid._index(index_i, index_j)
+
+        # 10. Create DataFrame of binned values
+        df = pd.DataFrame({
+            '_index': _index,
+            'index_i': index_i,
+            'index_j': index_j,
+            'param': param_data[use],
+            'SH': sh_data[use],
+            'SP': sp_data[use]
+        })
 
         # do conversion to conductance
         if self.param not in ['SH', 'SP']:
@@ -144,7 +170,7 @@ class Cmodel(object):
             df.loc[:,'param'] = df.loc[:,'param'] - 0.7*mode # 0.7 is quite arbitrarily chosen, but serves to avoid subtracting too much
             df.loc[df['param'] < 0, 'param'] = 0
             je = df['param'] / counts_per_erg # energy flux in mW/m2
-            
+
             # applying Robinson formulae
             df.loc[:,'SP'] = (40. * E0 * np.sqrt(je)) / (16. + E0**2) # Pedersen conductance
             df.loc[:,'SH'] = 0.45 * E0**0.85 * df.SP # Hall conductance
@@ -159,7 +185,7 @@ class Cmodel(object):
             raise RuntimeError('"how" must be mean or median')
 
         # binned_count = df.groupby('_index').param.count()
-        
+
         # make binned average arrays, and populate cells without SSUSI pixels with a background value
         binned_i, binned_j = self.grid._index2d(_hall.index)
         binned_hall = np.zeros(self.grid.shape)
@@ -214,10 +240,10 @@ class Cmodel(object):
                 euvtime = self.stime
             else:
                 euvtime = self.euvtime
-                
+
             sza = sunlight.sza(lat, lon, euvtime)
             EUV = conductance.EUV_conductance(sza, self.f107, 'h')
-            
+
             if len(lon.shape) == 2:
                 EUV = EUV.reshape(lon.shape)
             gridded = np.sqrt(gridded**2 + EUV**2)
@@ -264,13 +290,13 @@ class Cmodel(object):
                 euvtime = self.stime
             else:
                 euvtime = self.euvtime
-                
+
             sza = sunlight.sza(lat, lon, euvtime)
             EUV = conductance.EUV_conductance(sza, self.f107, 'p')
-            
+
             if len(lon.shape) == 2:
                 EUV = EUV.reshape(lon.shape)
-            
+
             gridded = np.sqrt(gridded**2 + EUV**2)
 
         return gridded
