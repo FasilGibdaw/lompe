@@ -1,12 +1,72 @@
 """ Saving functionality """
 import numpy as np
-from scipy.interpolate import interp2d
+from scipy.interpolate import RegularGridInterpolator
+# from scipy.interpolate import interp2d
 from lompe.model.data import Data
+
+
 class ArgumentError(Exception):
-     pass
+    pass
+
+
+class interp2d:
+    """
+    Drop-in replacement for scipy.interpolate.interp2d
+    using RegularGridInterpolator.
+    Supports only 'linear' interpolation (same as lompe usage).
+    """
+
+    def __init__(self, x, y, z, kind="linear", **kwargs):
+        # Ensure numpy arrays
+        x = np.asarray(x)
+        y = np.asarray(y)
+        z = np.asarray(z)
+
+        # Handle case where x, y are 2D meshgrid arrays
+        if x.ndim > 1:
+            x = x[0, :]  # take the first row (monotonic in x direction)
+        if y.ndim > 1:
+            y = y[:, 0]  # take the first column (monotonic in y direction)
+
+        # Ensure monotonic order (ascending)
+        if np.any(np.diff(x) < 0):
+            x = x[::-1]
+            z = z[:, ::-1]
+        if np.any(np.diff(y) < 0):
+            y = y[::-1]
+            z = z[::-1, :]
+
+        # Store
+        self.x = x
+        self.y = y
+        self.z = z
+
+        # Validate shape
+        if self.z.shape != (len(self.y), len(self.x)):
+            raise ValueError(
+                f"z shape {self.z.shape} does not match (len(y), len(x)) = {(len(self.y), len(self.x))}"
+            )
+
+        # Build interpolator
+        self.interp = RegularGridInterpolator(
+            (self.y, self.x), self.z, method=kind,
+            bounds_error=False, fill_value=np.nan
+        )
+
+    def __call__(self, x_new, y_new):
+        """
+        Evaluate interpolation on grid of (x_new, y_new).
+        interp2d convention: first arg = x, second = y.
+        """
+        X, Y = np.meshgrid(np.atleast_1d(x_new), np.atleast_1d(y_new))
+        pts = np.column_stack([Y.ravel(), X.ravel()])  # (y, x) order
+        Z = self.interp(pts).reshape(Y.shape)
+        return Z
+
+
 # dictionary for finding the functions associated with each save string
-funcs = {'efield':           'E', 
-         'convection':       'v', 
+funcs = {'efield':           'E',
+         'convection':       'v',
          'ground_mag':       'B_ground',
          'electric_current': 'j',
          'space_mag_fac':    'B_space_FAC',
@@ -14,22 +74,25 @@ funcs = {'efield':           'E',
          'fac':              'FAC',
          'hall':             'hall_conductance',
          'pedersen':         'pedersen_conductance',
-         'secs_current':     'get_SECS_currents'}
+         'secs_current':     'get_SECS_currents',
+         'potential':        'E_pot'}
 # vectors that will be returned from each save strings corresponding function
 vectors = {'efield': ['_E', '_N'],
            'convection': ['_E', '_N'],
            'ground_mag': ['_E', '_N', '_U'],
-           'electric_current':['_E', '_N'],
+           'electric_current': ['_E', '_N'],
            'space_mag_fac': ['_E', '_N', '_U'],
            'space_mag_full': ['_E', '_N', '_U'],
            'fac': [''],
            'hall': [''],
            'pedersen': [''],
-           'secs_current': ['_E', '_N']}
+           'secs_current': ['_E', '_N'],
+           'potential': [''],
+           }
 
 
-def save_model(model, save='all', 
-         time=0, file_name= False, append=True, suppress_print=False, load_kwargs={}, **kwargs):
+def save_model(model, save='all',
+               time=0, file_name=False, append=True, suppress_print=False, load_kwargs={}, **kwargs):
     """
     For saving the model and/or the lompe output
 
@@ -42,12 +105,12 @@ def save_model(model, save='all',
         possible stand alone strings or strings in list: 'all', 'all model', 'all output', 'model', 
         'data locations', 'efield', 'convection', 'ground_mag', 'electric_current', 'space_mag_fac',
         'space_mag_full', 'fac', 'hall', 'pedersen', 'secs_current'
-        
+
         The default is 'all'
 
          result of each string:
         → 'all' will save all model information (read 'all model') and all lompe outputs (read 'all output')
-        
+
         → 'all model' will save model amplitudes, conductance (allowing the recreation
            of the lompe Emodel object) and data locations (allowing the creation of a DummyData object that has reduced
            functionality compared to lompe Data object)
@@ -68,9 +131,9 @@ def save_model(model, save='all',
             this will always be saved if the 'model' is saved
         → 'secs_current' will save the horizontal ionospheric currents using
             secs pole amplitudes using Emodel.get_SECS_currents
-        
+
         read the doc strings of each relevant function for more information
-        
+
     time : int/float/datetime/timedelta, optional
         a quantity that indentifies the time of the dataset. 
         The default is 0 and will be changed when append is True to 1+ the maximum of the existing file. 
@@ -101,14 +164,14 @@ def save_model(model, save='all',
         that will allow them to be recreated.
 
     """
-    to_save=[]
+    to_save = []
     if isinstance(save, (str, np.str_)):
-        save= list([save])
-    save= [s.lower() for s in save]
+        save = list([save])
+    save = [s.lower() for s in save]
     if 'all' in save:
-        to_save=['model', 'data_locations', 'efield', 'convection', 'ground_mag',
-                 'electric_current', 'space_mag_fac', 'space_mag_full',
-                 'fac', 'hall','pedersen','secs_current']
+        to_save = ['model', 'data_locations', 'efield', 'convection', 'ground_mag',
+                   'electric_current', 'space_mag_fac', 'space_mag_full',
+                   'fac', 'hall', 'pedersen', 'secs_current', 'potential']
         save.remove('all')
     else:
         if 'all model' in save:
@@ -116,8 +179,8 @@ def save_model(model, save='all',
             save.remove('all model')
         if 'all output' in save:
             to_save.extend(['efield', 'convection', 'ground_mag',
-                     'electric_current', 'space_mag_fac', 'space_mag_full',
-                     'fac', 'hall','pedersen','secs_current'])
+                            'electric_current', 'space_mag_fac', 'space_mag_full',
+                            'fac', 'hall', 'pedersen', 'secs_current', 'potential'])
             save.remove('all output')
     to_save.extend(save)
     if not suppress_print:
@@ -126,84 +189,110 @@ def save_model(model, save='all',
     import warnings
     import json
     warnings.simplefilter('ignore', (RuntimeWarning))
-    data_vars1= {}
-    save_model= 'model' in to_save
-    data_locs= 'data_locations' in to_save
+    data_vars1 = {}
+    save_model = 'model' in to_save
+    data_locs = 'data_locations' in to_save
     if save_model:
         to_save.remove('model')
-        to_save+= ['hall', 'pedersen']
+        to_save += ['hall', 'pedersen']
     if data_locs:
         to_save.remove('data_locations')
-    to_save= np.unique(to_save)
+    to_save = np.unique(to_save)
     for dtype in to_save:
         if 'conductance' in funcs[dtype]:
-            data= np.array(getattr(model, funcs[dtype])(model.grid_E.lon, model.grid_E.lat, **kwargs))
+            data = np.array(getattr(model, funcs[dtype])(
+                model.grid_E.lon, model.grid_E.lat, **kwargs))
         else:
-            data= np.array(getattr(model, funcs[dtype])(**kwargs), ndmin=3)
-        
+            data = np.array(getattr(model, funcs[dtype])(**kwargs), ndmin=3)
+
         try:
-            data= data.reshape(-1, *model.grid_J.shape)
+            data = data.reshape(-1, *model.grid_J.shape)
         except:
-            data= data.reshape(-1, *model.grid_E.shape)
-        vecs= vectors[dtype]
+            data = data.reshape(-1, *model.grid_E.shape)
+        vecs = vectors[dtype]
         if 'mag' in dtype:
-            unit= 'Tesla'
-        elif 'current' in dtype :
-            unit= 'Amps/Meter'
-        elif dtype=='efield':
-            unit= 'Volts/Meter'
-        elif dtype=='fac':
-            unit= 'Amps/(Meter^2)'
-        elif dtype=='convection':
-            unit= 'Meter/Second'
+            unit = 'Tesla'
+        elif 'current' in dtype:
+            unit = 'Amps/Meter'
+        elif dtype == 'efield':
+            unit = 'Volts/Meter'
+        elif dtype == 'fac':
+            unit = 'Amps/(Meter^2)'
+        elif dtype == 'convection':
+            unit = 'Meter/Second'
         elif 'conductance' in funcs[dtype]:
-            unit= 'siemens'
+            unit = 'siemens'
+        elif dtype == 'potential':
+            unit = 'Volts'
         else:
-            raise ArgumentError(f'to save string not known: {dtype}\nknown strings are: {["efield", "convection", "ground_mag","electric_current", "space_mag_fac", "space_mag_full","fac", "hall","pedersen","secs_current"]}')
+            raise ArgumentError(
+                f'to save string not known: {dtype}\nknown strings are: {["efield", "convection", "ground_mag", "electric_current", "space_mag_fac", "space_mag_full", "fac", "hall", "pedersen", "secs_current", "potential"]}')
         if data[0].size == model.grid_E.xi.size:
-            grid= model.grid_E
-            data_vars1.update({f'{dtype}{vec}': (['time', 'eta', 'xi'], [data[i].reshape(grid.shape)], 
-                                                  {'units':unit}) for i, vec in enumerate(vecs)})
+            grid = model.grid_E
+            data_vars1.update({f'{dtype}{vec}': (['time', 'eta', 'xi'], [data[i].reshape(grid.shape)],
+                                                 {'units': unit}) for i, vec in enumerate(vecs)})
 
         else:
             grid = model.grid_J
-            data_vars1.update({f'{dtype}{vec}': (['time', 'eta', 'xi'], 
-                                                  [(interp2d(model.grid_J.xi, model.grid_J.eta, 
-                                                            data[i].reshape(grid.shape))(model.grid_E.xi[0, :], 
+            data_vars1.update({f'{dtype}{vec}': (['time', 'eta', 'xi'],
+                                                 [(interp2d(model.grid_J.xi, model.grid_J.eta,
+                                                            data[i].reshape(grid.shape))(model.grid_E.xi[0, :],
                                                                                          model.grid_E.eta[:, 0])).reshape(model.grid_E.shape)],
-                                                                                         {'units':unit,
-                                                                                          'description':'has been linearly interpolated from default grid: "grid_E" to other grid "grid_J" using scipy.interpolate.interp2d'}) \
+                                                 {'units': unit,
+                                                  'description': 'has been linearly interpolated from default grid: "grid_E" to other grid "grid_J" using scipy.interpolate.interp2d'})
                                for i, vec in enumerate(vecs)})
 
     if save_model:
-        data_vars1.update({'model_vector':(['time', 'eta', 'xi'], [model.m.reshape(model.grid_E.shape)],
-                                  {'units':'Coulomb/Meter',
-                                   'description':'model vector (the m attribute of the lompe model object) must be flattened before using as model attribute'})})                                                                  
-    if data_locs: data_vars1.update(data_locs_to_dict(model))
+        data_vars1.update({'model_vector': (['time', 'eta', 'xi'], [model.m.reshape(model.grid_E.shape)],
+                                            {'units': 'Coulomb/Meter',
+                                             'description': 'model vector (the m attribute of the lompe model object) must be flattened before using as model attribute'})})
+    if data_locs:
+        data_vars1.update(data_locs_to_dict(model))
 
-    coords1= {'xi': model.grid_E.xi[0, :], 'eta': model.grid_E.eta[:, 0],
-             'lon':(['xi', 'eta'], model.grid_E.lon.T),
-             'lat':(['xi', 'eta'], model.grid_E.lat.T),
-             'time':[time]}
-    ds1=Dataset(data_vars=data_vars1, coords=coords1)
-    ds1.attrs['Data_locs']= json.dumps(data_locs)
-    ds1.attrs['Epoch']= model.epoch
-    ds1.attrs['Dipole']=json.dumps(model.dipole)
-    ds1.attrs['grid_info_E']=json.dumps(model.grid_E.to_dictionary())
-    ds1.attrs['grid_info_J']=json.dumps(model.grid_J.to_dictionary())
-    
+    coords1 = {'xi': model.grid_E.xi[0, :], 'eta': model.grid_E.eta[:, 0],
+               'lon': (['xi', 'eta'], model.grid_E.lon.T),
+               'lat': (['xi', 'eta'], model.grid_E.lat.T),
+               'time': [time]}
+    ds1 = Dataset(data_vars=data_vars1, coords=coords1)
+    ds1.attrs['Data_locs'] = json.dumps(data_locs)
+    ds1.attrs['Epoch'] = model.epoch
+    ds1.attrs['Dipole'] = json.dumps(model.dipole)
+    ds1.attrs['grid_info_E'] = json.dumps(model.grid_E.to_dictionary())
+    ds1.attrs['grid_info_J'] = json.dumps(model.grid_J.to_dictionary())
+
+    # if file_name:
+    #     import os
+    #     from xarray import load_dataset, concat
+    #     if os.path.isfile(file_name):
+    #         if append:
+    #             ds = load_dataset(file_name, **load_kwargs)
+    #             if time == 0:
+    #                 ds1['time'] = np.array([ds.time.max()+1])
+    #             ds1 = concat([ds, ds1], dim='time')
+    #     ds1.to_netcdf(file_name)
+
+    # return ds1
     if file_name:
         import os
         from xarray import load_dataset, concat
-        if os.path.isfile(file_name):
-            if append:
-                ds=load_dataset(file_name, **load_kwargs)
-                if time==0:
-                    ds1['time']= np.array([ds.time.max()+1])
-                ds1= concat([ds, ds1], dim='time')
-        ds1.to_netcdf(file_name)
-            
-    return ds1
+
+        if os.path.isfile(file_name) and append:
+            # Load existing dataset
+            ds_existing = load_dataset(file_name, **load_kwargs)
+
+            # Make sure time is strictly increasing
+            new_time = ds_existing.time.max().item() + 1 if time == 0 else time
+            ds1 = ds1.assign_coords(time=[new_time])
+
+            # Concatenate
+            ds_combined = concat([ds_existing, ds1], dim="time")
+
+            # Save back
+            ds_combined.to_netcdf(file_name, mode="w")
+
+        else:
+            # First write (or overwrite if append=False)
+            ds1.to_netcdf(file_name, mode="w")
 
 
 def interp(grid, conductance, lon, lat):
@@ -238,8 +327,8 @@ def interp(grid, conductance, lon, lat):
 
     """
     from scipy.interpolate import griddata
-    if lon.size==grid.xi.size:
-        if lon.ndim==1:
+    if lon.size == grid.xi.size:
+        if lon.ndim == 1:
             return conductance.flatten()
         else:
             return conductance
@@ -272,14 +361,15 @@ class DummyData(Data):
 
         """
         self.coords = coordinates
-        self.datatype= datatype
+        self.datatype = datatype
         if not label:
-            label= datatype
-        self.label= label
+            label = datatype
+        self.label = label
         # Altering the getattr function to allow message to be added
-        self.__getattributeoriginal__= self.__getattribute__
-        self.__getattribute__= self.__getattributeCheck__
+        self.__getattributeoriginal__ = self.__getattribute__
+        self.__getattribute__ = self.__getattributeCheck__
         self.values = ['No data loaded from saved model']
+
     def __getattr__(self, attribute):
         """
         Altering the getattr function 
@@ -294,15 +384,16 @@ class DummyData(Data):
             default getattr return
         """
         return self.__getattributeCheck__(attribute)
+
     def __getattributeCheck__(self, attribute):
         """
-        
+
 
         Parameters
         ----------
         attribute : str
             str of attribute name.
-            
+
         Raises
         ------
         AtrributeError
@@ -314,15 +405,15 @@ class DummyData(Data):
             default getattr return
 
         """
-        try: 
+        try:
             return self.__getattributeoriginal__(attribute)
         except AttributeError:
-            raise AttributeError(f'Attribute does not exist likely because data has been loaded from file so only coordinates are provided. Attribute used: {attribute}')
+            raise AttributeError(
+                f'Attribute does not exist likely because data has been loaded from file so only coordinates are provided. Attribute used: {attribute}')
+
     def subset(self, *args):
-            raise AttributeError(f'Attribute does not exist likely because data has been loaded from file so only coordinates are provided. Attribute used: {attribute}')
-
-
-
+        raise AttributeError(
+            f'Attribute does not exist likely because data has been loaded from file so only coordinates are provided. Attribute used{attribute}')
 
 
 def data_locs_to_dict(model):
@@ -344,12 +435,12 @@ def data_locs_to_dict(model):
         different times.
 
     """
-    data_vars= {}
+    data_vars = {}
     for dtype in model.data.keys():
-        coords=[]
-        dtypes= []
-        labels= []
-        length= []
+        coords = []
+        dtypes = []
+        labels = []
+        length = []
         for ds in model.data[dtype]:
             coords.append([ds.coords[key] for key in ['lon', 'lat']])
             dtypes.append(dtype)
@@ -360,14 +451,15 @@ def data_locs_to_dict(model):
             # np.array([np.concatenate([c for c in coords[:,0]]), np.concatenate([c for c in coords[:,1]])])
             coords = np.concatenate(coords, axis=1)
             data_vars.update({dtype+'_input_locations': (['time'],
-                                      [coords.tobytes()],
+                                                         [coords.tobytes()],
                               {'labels': '\t'.join([f'{label} length: {l}' for label, l in zip(labels, length)])})})
-        
-            
+
     return data_vars
+
+
 def load_model(file, time='first'):
     """
-    
+
 
     Parameters
     ----------
@@ -394,42 +486,47 @@ def load_model(file, time='first'):
     from secsy import cubedsphere as cs
     from functools import partial
     import json
-    
-    if isinstance(file, (str, np.str_)):    
-        ds= xr.load_dataset(file)
+
+    if isinstance(file, (str, np.str_)):
+        ds = xr.load_dataset(file)
     elif isinstance(file, (xr.Dataset)):
-        ds= file
+        ds = file
     else:
-        raise ArgumentError(f'input not understood please provide either string or dataset, you provided: {type(file)}')
+        raise ArgumentError(
+            f'input not understood please provide either string or dataset, you provided: {type(file)}')
     if 'hall' not in ds or 'pedersen' not in ds or 'model_vector' not in ds:
-        raise ArgumentError('data set does not include: '+''.join([param for param in  ['hall', 'pedersen', 'model_vector'] if param not in ds])+\
+        raise ArgumentError('data set does not include: '+''.join([param for param in ['hall', 'pedersen', 'model_vector'] if param not in ds]) +
                             ' they are required to recreate the model object please include these parameters when using the save function')
-    if time=='first':
-        time= ds.time.values.min()
-    ds= ds.sel(time=time)
-    grid= cs.from_dictionary(json.loads(ds.attrs['grid_info_E']))
-    model=Emodel(cs.from_dictionary(json.loads(ds.attrs['grid_info_J'])),[partial(interp, grid, ds['hall'].values), 
-                                        partial(interp, grid, ds['pedersen'].values)], epoch= float(ds.Epoch),
-                 dipole= json.loads(ds.Dipole))
-    model.m= ds.model_vector.values.flatten()
+    if time == 'first':
+        time = ds.time.values.min()
+    ds = ds.sel(time=time)
+    grid = cs.from_dictionary(json.loads(ds.attrs['grid_info_E']))
+    model = Emodel(cs.from_dictionary(json.loads(ds.attrs['grid_info_J'])), [partial(interp, grid, ds['hall'].values),
+                                                                             partial(interp, grid, ds['pedersen'].values)], epoch=float(ds.Epoch),
+                   dipole=json.loads(ds.Dipole))
+    model.m = ds.model_vector.values.flatten()
     if json.loads(ds.attrs['Data_locs']):
         for dtype in ['efield', 'convection', 'ground_mag', 'space_mag_full', 'space_mag_fac', 'fac']:
             if dtype+'_input_locations' in ds:
-                
-                length1= None
+
+                length1 = None
                 for label_info in ds[dtype+'_input_locations'].attrs['labels'].split('\t'):
-                    label, length2= label_info.split(' length: ')
+                    label, length2 = label_info.split(' length: ')
                     if not length1 is None:
-                        length2= int(length2)+length1
+                        length2 = int(length2)+length1
                     else:
-                        length2= int(length2)
-                    lon, lat= np.frombuffer(ds[dtype+'_input_locations'].values).reshape(2, -1)[:, length1:length2]
-                    model.data[dtype].append(DummyData({'lon':lon, 'lat':lat}, dtype, label=label))
-                
+                        length2 = int(length2)
+                    lon, lat = np.frombuffer(
+                        ds[dtype+'_input_locations'].values).reshape(2, -1)[:, length1:length2]
+                    model.data[dtype].append(
+                        DummyData({'lon': lon, 'lat': lat}, dtype, label=label))
+
     return model
+
+
 def load_grid(file):
     """
-    
+
 
     Parameters
     ----------
@@ -454,13 +551,14 @@ def load_grid(file):
     from secsy import cubedsphere as cs
     from functools import partial
     import json
-    
+
     if isinstance(file, (str, np.str_)):
-        ds= xr.load_dataset(file)
+        ds = xr.load_dataset(file)
     elif isinstance(file, (xr.Dataset)):
-        ds= file
+        ds = file
     else:
-        raise ArgumentError(f'input not understood please provide either string or dataset, you provided: {type(file)}')
+        raise ArgumentError(
+            f'input not understood please provide either string or dataset, you provided: {type(file)}')
     if 'grid_info_J' not in ds.attrs or 'grid_info_E' not in ds.attrs:
         raise ArgumentError('No grid information store in dataset attributes')
     return cs.from_dictionary(json.loads(ds.attrs['grid_info_J'])), cs.from_dictionary(json.loads(ds.attrs['grid_info_E']))

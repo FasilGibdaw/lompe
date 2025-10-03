@@ -501,7 +501,7 @@ def polarplot(ax, model, apex, time, dV=None, **clkw):
         keywords for plotting coastlines passed to Polarplot.coastlines()
     """
 
-    pax = Polarplot(ax, minlat=50)
+    pax = Polarplot(ax, minlat=70)
     cd = Dipole(apex.year)
 
     # coastlines
@@ -897,7 +897,7 @@ def resolutionplot(model, apex=None, savekw=None, return_axes=False,
 
     # Add legend
     lgnd = ax.legend(loc=3, bbox_to_anchor=(0.4, -0.18), fontsize=fs)
-    for lgndhandle in lgnd.legendHandles:
+    for lgndhandle in lgnd.legend_handles:
         lgndhandle._markersize = fs
 
     # Add colorbar

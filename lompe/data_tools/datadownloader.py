@@ -623,15 +623,18 @@ def download_iridium(event, basepath='./', tempfile_path='./', file_name=''):
     # check if the processed file exists
     savefile = tempfile_path + event.replace('-', '') + '_iridium.nc'
 
-    if os.path.isfile(savefile):  # checks if file already exists
+    # checks if file already exists
+    # checking if the file is not empty
+    if os.path.isfile(savefile) and os.path.getsize(savefile) > 0:
         return savefile
     else:
         import certifi
         # URL to download data from (lompe username is already registered in the API)
         urlstr = ampere_coreurl('data-rawdB.php', 'lompe', start, duration)
-
+        # headers = {"User-Agent": "Mozilla/5.0"}
         # verify=certifi.where())
-        response = requests.get(urlstr, verify=certifi.where())
+        response = requests.get(
+            urlstr, verify=certifi.where(), stream=True)
 
         # Check if the request was successful
         if response.status_code == 200:
@@ -664,9 +667,9 @@ def download_supermag(event, tempfile_path='./'):
         return savefile
     else:
         # run the function to download the data in the tempfiles folder (later to be deleted if successful)
-        smag_data_for_event(start)
-
-        files = glob.glob('./tempfiles/*.txt')
+        smag_data_for_event(start, event)
+        temp_smag_path = f"./smag_files{event.replace('-', '')}/"
+        files = glob.glob(f'{temp_smag_path}*.txt')
         df_combined = pd.DataFrame()
         for file in files:
             data = pd.read_json(file)
@@ -691,13 +694,13 @@ def download_supermag(event, tempfile_path='./'):
 
         df_final.to_hdf(savefile, key='df_final', mode='w')
         # remove the tempfiles folder after the hdf file is created
-        shutil.rmtree('./tempfiles/')
+        shutil.rmtree(temp_smag_path)
         return savefile
 
 
 def smag_download_for_station(args, retries=5, backoff_factor=0.5):
     # DO NOT EDIT THIS FUNCTION
-    urlstr, station = args
+    urlstr, station, temp_smag_path = args
     url = urlstr + '&station=' + station.upper()
     import certifi
     from requests.exceptions import RequestException
@@ -708,7 +711,7 @@ def smag_download_for_station(args, retries=5, backoff_factor=0.5):
             response = requests.get(url, verify=certifi.where())
             if response.status_code == 200:
                 if response.content:  # Check if the response content is not zero bytes
-                    with open(f'./tempfiles/{station}_data.txt', 'wb') as file:
+                    with open(f'{temp_smag_path}{station}_data.txt', 'wb') as file:
                         file.write(response.content)
                     return None
                 else:
@@ -729,9 +732,10 @@ def smag_download_for_station(args, retries=5, backoff_factor=0.5):
     return None
 
 
-def smag_data_for_event(start):
+def smag_data_for_event(start, event):
     # DONOT EDIT THIS FUNCTION
-    os.makedirs('./tempfiles', exist_ok=True)
+    temp_smag_path = f"./smag_files{event.replace('-', '')}/"
+    os.makedirs(f'{temp_smag_path}', exist_ok=True)
     duration = 86400  # Duration in seconds (one day)
     # lazy importing :)
     from lompe.data_tools.supermag_api import sm_GetUrl, sm_coreurl, sm_keycheck_data
@@ -750,7 +754,7 @@ def smag_data_for_event(start):
     stations = stations[1:-1]
 
     # Create a list of arguments to pass to data_download_for_station
-    args_list = [(urlstr, station) for station in stations]
+    args_list = [(urlstr, station, temp_smag_path) for station in stations]
 
     Parallel(n_jobs=8, backend='threading')(
         delayed(smag_download_for_station)(args) for args in args_list)
@@ -821,12 +825,13 @@ def download_champ(event, basepath='./', tempfile_path='./'):
         champ_df = pd.DataFrame({
             'Be': dB[1],
             'Bn': dB[0],
-            'Br': -dB[2],
+            'Bu': -dB[2],
             'lon': phi,
             'lat': 90 - theta,
             'r': r
         }, index=time)
         champ_df.to_hdf(processed_file, key='df', mode='w')
+        os.remove(savefile)  # remove the raw file after processing
         return processed_file
     except Exception as e:
         print(f"Failed to process the file: {e}")
@@ -913,55 +918,66 @@ def download_sdarn(event, basepath='./', tempfile_path='./'):
         return savefile
     else:
         from lompe.data_tools.dataloader import radar_losvec_from_mag
-        os.makedirs(basepath + 'sdarn_files', exist_ok=True)
-        download_sdarn_files(event, basepath + '/sdarn_files/')
+        temp_sdarn_path = basepath + f"sdarn_files_{event.replace('-', '')}/"
+        os.makedirs(temp_sdarn_path, exist_ok=True)
+        download_sdarn_files(event, temp_sdarn_path)
         # looking for the .nc files for the event
-        files = glob.glob(
-            f"{basepath}/sdarn_files/*{event.replace('-', '')}*.nc")
-        files.sort()
-        ddd = pd.DataFrame()
-        for file in files:
-            sm = xr.load_dataset(file)
-            st_abbrev = file.split('/')[-1].split('.')[1]
-            # mjd conversion
-            mjd_epoch = pd.Timestamp('1858-11-17')
-            duration = (sm['mjd_end'] + mjd_epoch) - \
-                (sm['mjd_start'] + mjd_epoch)
+        try:
+            files = glob.glob(
+                f"{temp_sdarn_path}*{event.replace('-', '')}*.nc")
+            files.sort()
+            ddd = pd.DataFrame()
+            for file in files:
+                sm = xr.load_dataset(file)
+                st_abbrev = file.split('/')[-1].split('.')[1]
+                # mjd conversion
+                mjd_epoch = pd.Timestamp('1858-11-17')
+                duration = (sm['mjd_end'] + mjd_epoch) - \
+                    (sm['mjd_start'] + mjd_epoch)
 
-            time = (sm['mjd_start'] + mjd_epoch) + duration
+                time = (sm['mjd_start'] + mjd_epoch) + duration
 
-            # dff['date'] = unix_epoch + dff.mjd_start
+                # dff['date'] = unix_epoch + dff.mjd_start
 
-            temp = pd.DataFrame()
+                temp = pd.DataFrame()
 
-            # in degrees AACGM
-            temp.loc[:, 'mlat'] = sm['vector.mlat'].values
-            # in degrees AACGM
-            temp.loc[:, 'mlon'] = sm['vector.mlon'].values
-            # glat, glon from lompe "radar_losvec_from_mag" is a bit different from the vector.glat and vector.glon from the data??
-            temp.loc[:, 'vector.glat'] = sm['vector.glat'].values  # in degrees
-            temp.loc[:, 'vector.glon'] = sm['vector.glon'].values  # in degrees
-            # in degrees, the angle between los and magnetic north
-            temp.loc[:, 'azimuth'] = sm['vector.kvect'].values
-            temp.loc[:, 'vlos'] = sm['vector.vel.median'].values       # in m/s
-            temp.loc[:, 'vlos_sd'] = sm['vector.vel.sd'].values         # in m/s
-            temp.loc[:, 'range'] = sm['vector.pwr.median'].values       # in km
-            # spectral width in m/s
-            temp.loc[:, 'wdt'] = sm['vector.wdt.median'].values
-            temp.loc[:, 'time'] = pd.to_datetime(time.values).round('s')
-            temp.loc[:, 'radar'] = st_abbrev
-            # temp.set_index = pd.to_datetime(temp['time'], unit='s')
-            # dff['datetime'] = mjd_epoch + dff['mjd_start']
-            ddd = pd.concat([ddd, temp], ignore_index=True)
-        ddd.set_index('time', inplace=True)
-        ddd['glat'], ddd['glon'], ddd['le'], ddd['ln'], ddd['le_m'], ddd['ln_m'] = radar_losvec_from_mag(ddd['mlat'].values,
-                                                                                                         ddd['mlon'].values, ddd['azimuth'].values, ddd.index[0])
-        dd = ddd[ddd['glat'] > 0]  # restrict to northern hemisphere
-        df_final = dd.sort_values(by='time')
-        df_final.to_hdf(savefile, key='df', mode='w')
-        shutil.rmtree('./sdarn_files/')
+                # in degrees AACGM
+                temp.loc[:, 'mlat'] = sm['vector.mlat'].values
+                # in degrees AACGM
+                temp.loc[:, 'mlon'] = sm['vector.mlon'].values
+                # glat, glon from lompe "radar_losvec_from_mag" is a bit different from the vector.glat and vector.glon from the data??
+                # in degrees
+                temp.loc[:, 'vector.glat'] = sm['vector.glat'].values
+                # in degrees
+                temp.loc[:, 'vector.glon'] = sm['vector.glon'].values
+                # in degrees, the angle between los and magnetic north
+                temp.loc[:, 'azimuth'] = sm['vector.kvect'].values
+                # in m/s
+                temp.loc[:, 'vlos'] = sm['vector.vel.median'].values
+                # in m/s
+                temp.loc[:, 'vlos_sd'] = sm['vector.vel.sd'].values
+                # in km
+                temp.loc[:, 'range'] = sm['vector.pwr.median'].values
+                # spectral width in m/s
+                temp.loc[:, 'wdt'] = sm['vector.wdt.median'].values
+                temp.loc[:, 'time'] = pd.to_datetime(time.values).round('s')
+                temp.loc[:, 'radar'] = st_abbrev
+                # temp.set_index = pd.to_datetime(temp['time'], unit='s')
+                # dff['datetime'] = mjd_epoch + dff['mjd_start']
+                ddd = pd.concat([ddd, temp], ignore_index=True)
+            ddd.set_index('time', inplace=True)
+            ddd['glat'], ddd['glon'], ddd['le'], ddd['ln'], ddd['le_m'], ddd['ln_m'] = radar_losvec_from_mag(ddd['mlat'].values,
+                                                                                                             ddd['mlon'].values, ddd['azimuth'].values, ddd.index[0])
+            dd = ddd[ddd['glat'] > 0]  # restrict to northern hemisphere
+            df_final = dd.sort_values(by='time')
+            df_final.to_hdf(savefile, key='df', mode='w')
+            # remove the temp files after processing
+            shutil.rmtree(temp_sdarn_path)
 
-        return savefile
+            return savefile
+        except Exception as e:
+            print(f"Failed to process the file: {e}")
+            return None
 
 
 def download_swarm(event, tempfile_path='./'):
@@ -1073,7 +1089,7 @@ def download_dmsp_ssies(event, sat, tempfile_path='./', **madrigal_kwargs):
 
     date_str = event.replace('-', '')
     year = event[:4]
-    url_base = "http://cedar.openmadrigal.org"
+    url_base = "https://cedar.openmadrigal.org"
     url = url_base + \
         f"/ftp/fullname/{madrigal_kwargs['user_fullname']}/email/{madrigal_kwargs['user_email']}/affiliation/{madrigal_kwargs['user_affiliation']}/kinst/8100/year/{year}/"
 
