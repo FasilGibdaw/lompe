@@ -9,6 +9,8 @@ import os
 import glob
 import shutil
 from lompe.utils.time import date2doy
+import random
+import time
 
 warnings.filterwarnings("ignore")
 
@@ -709,6 +711,7 @@ def smag_download_for_station(args, retries=5, backoff_factor=0.5):
     for i in range(retries):
         try:
             response = requests.get(url, verify=certifi.where())
+            time.sleep(random.uniform(0.2, 0.5))
             if response.status_code == 200:
                 if response.content:  # Check if the response content is not zero bytes
                     with open(f'{temp_smag_path}{station}_data.txt', 'wb') as file:
@@ -800,7 +803,7 @@ def download_champ(event, basepath='./', tempfile_path='./'):
                     f"Failed to download the file. Status code: {response.status_code}")
                 return None
         except Exception as e:
-            print(e)
+            print(f"No champ data in this period: {e}")
             return None
 
     # Process the downloaded CDF file ot get the magnetic disturbance
@@ -889,6 +892,7 @@ def download_sdarn_files(event, basepath='./'):
 
     # Send a GET request to the URL
     response = requests.get(url)
+    time.sleep(random.uniform(0.2, 0.5))
     soup = BeautifulSoup(response.content, "html.parser")
     # Check if the request was successful (status code 200)
     if response.status_code == 200:
