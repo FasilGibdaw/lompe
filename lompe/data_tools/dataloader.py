@@ -321,12 +321,13 @@ def read_ssies(event, sat, basepath='./', tempfile_path='./', forcenew=False, **
 
         for fname in fileList:
             filenames.append(fname.name)
-        filenames = [filename for filename in filenames if date_str in filename]
+        filenames = [
+            filename for filename in filenames if date_str in filename]
         if len(filenames) == 0:
             continue
         no_data_found = False
-            # ssies = str([s for s in filenames if '_' + str(sat) + 's1' in s][0])
-        ssies = [s for s in filenames if '_' + str(sat) +  's1.' in s]
+        # ssies = str([s for s in filenames if '_' + str(sat) + 's1' in s][0])
+        ssies = [s for s in filenames if '_' + str(sat) + 's1.' in s]
         # temp_dens = str(
         #     [s for s in filenames if '_' + str(sat) + 's4.' in s][0])
         temp_dens = [s for s in filenames if '_' + str(sat) + 's4.' in s]
@@ -702,7 +703,7 @@ def read_iridium(event, basepath='./', tempfile_path='./', file_name=''):
             fn = files[0]
         except:
             raise FileNotFoundError(
-                'Cannot find Iridium netcdf in specified folder.')  
+                'Cannot find Iridium netcdf in specified folder.')
 
     iridset = xr.load_dataset(fn, engine='netcdf4')
 
@@ -734,9 +735,15 @@ def read_iridium(event, basepath='./', tempfile_path='./', file_name=''):
     itrs_pos = gcrs_pos.transform_to(coord.ITRS(obstime=irid_dt))
 
     # get space mag obs in new coordinate system
-    cart_B = coord.CartesianRepresentation(iridset.b_eci.values.T[0],
-                                           iridset.b_eci.values.T[1],
-                                           iridset.b_eci.values.T[2],
+    if 'b_eci' in iridset:
+        vec = iridset['b_eci']
+    elif 'bmodel_eci' in iridset:
+        vec = iridset['bmodel_eci']
+    else:
+        raise KeyError("Neither 'b_eci' nor 'bmodel_eci' found")
+    cart_B = coord.CartesianRepresentation(vec.values.T[0],
+                                           vec.values.T[1],
+                                           vec.values.T[2],
                                            unit=units.nT)
     gcrs_B = coord.GCRS(cart_B, obstime=irid_dt)
     itrs_B = gcrs_B.transform_to(coord.ITRS(obstime=irid_dt))
