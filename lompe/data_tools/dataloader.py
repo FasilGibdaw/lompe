@@ -698,7 +698,7 @@ def read_iridium(event, basepath='./', tempfile_path='./', file_name=''):
     else:
         fn = basepath + event.replace('-', '') + 'Amp_invert.ncdf'
     if not os.path.isfile(fn):
-        files = glob.glob(basepath + '*' + event.replace('-', '') + '*.ncdf')
+        files = glob.glob(basepath + '*' + event.replace('-', '') + '*.nc')
         try:
             fn = files[0]
         except:
