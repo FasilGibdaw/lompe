@@ -501,7 +501,7 @@ def polarplot(ax, model, apex, time, dV=None, **clkw):
         keywords for plotting coastlines passed to Polarplot.coastlines()
     """
 
-    pax = Polarplot(ax, minlat=70)
+    pax = Polarplot(ax, minlat=50)
     cd = Dipole(apex.year)
 
     # coastlines
