@@ -496,11 +496,11 @@ def read_sdarn(event, basepath='./', tempfile_path='./', hemi='north'):
     else:
         file = file[0]
 
-    SDarn_read = pydarn.SuperDARNRead(file)
+    # SDarn_read = pydarn.SuperDARNRead(file)
     if file.split('.')[-1] == 'grdmap':
-        data = SDarn_read.read_grid()
+        data = pydarn.read_grid(file)
     elif file.split('.')[-1] == 'map':
-        data = SDarn_read.read_map()
+        data = pydarn.read_map(file)
     else:
         print('SuperDARN file has unknown format. Aborting.')
         return None
@@ -509,8 +509,8 @@ def read_sdarn(event, basepath='./', tempfile_path='./', hemi='north'):
     radars = pydarn.SuperDARNRadars.radars
 
     ddd = pd.DataFrame()
-    for t in range(len(data)):
-        tt = data[t]
+    for t in range(len(data[0])):
+        tt = data[0][t]
         if sum(tt['nvec']) == 0:
             continue
 
@@ -525,7 +525,9 @@ def read_sdarn(event, basepath='./', tempfile_path='./', hemi='north'):
             ne = tt['nvec'][c]
             stids = (np.ones(ne) * s).astype(int)
             freqs = np.ones(ne) * tt['freq'][c]
-            names = [radars[s][0]] * ne
+            # names = [radars[s][0]] * ne
+            rid = pydarn.RadarID(s)
+            names = [radars[rid].name] * ne
 
             temp2 = pd.DataFrame()
             temp2.loc[:, 'stid'] = stids
