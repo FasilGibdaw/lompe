@@ -9,15 +9,26 @@ to requested geographic coordinates.
 from __future__ import annotations
 
 import datetime as dt
+import os
+import tempfile
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
+import appdirs
 import apexpy
 import cdflib
 import numpy as np
 import pandas as pd
+import pkg_resources
 from .download_solarwind_and_indices import get_f107
+
+# OvationPyme imports nasaomnireader only when its automatic OMNI retrieval
+# path is used.  This keeps that optional legacy dependency compatible with
+# current setuptools, without invoking it for the local-CDF workflow below.
+if not hasattr(pkg_resources, 'appdirs'):
+    pkg_resources.appdirs = appdirs
+os.environ.setdefault('SPACEPY', str(Path(tempfile.gettempdir()) / 'ovationpyme-spacepy'))
 
 from ovationpyme import ovation_utilities
 from ovationpyme.ovation_prime import (
